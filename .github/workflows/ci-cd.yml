@@ -1,0 +1,70 @@
+name: CI/CD Kukusan Sport Center
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-test:
+    name: Lint, Build & Integration Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+
+      - name: PHP Syntax Linting
+        run: find ./src -name "*.php" -print0 | xargs -0 -n1 -P4 php -l
+
+      - name: Setup Environment
+        run: cp .env.example .env
+
+      - name: Start Docker Compose Stack
+        run: docker compose up -d --build
+
+      - name: Wait for Database & Web Server
+        run: |
+          sleep 15
+          docker compose ps
+
+      - name: Test Login Page Endpoint
+        run: |
+          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/login.php)
+          echo "HTTP Status /login.php: $STATUS_CODE"
+          if [ "$STATUS_CODE" -ne 200 ]; then
+            docker compose logs
+            exit 1
+          fi
+
+      - name: Cleanup Test Containers
+        if: always()
+        run: docker compose down -v
+
+  deploy:
+    name: Deploy to Self-Hosted Runner
+    needs: build-and-test
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Latest Code
+        uses: actions/checkout@v4
+
+      - name: Prepare .env
+        run: |
+          if [ ! -f .env ]; then
+            cp .env.example .env
+          fi
+
+      - name: Rebuild & Restart Containers
+        run: |
+          docker compose down
+          docker compose up -d --build
+          docker image prune -f
