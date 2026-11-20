@@ -1,114 +1,150 @@
 <?php
-// Panggil file koneksi database
+session_start();
 include 'koneksi.php';
 
-// Ambil id_lapangan dari URL, pastikan ada nilainya
-$id_lapangan = isset($_GET['id_lapangan']) ? intval($_GET['id_lapangan']) : 0;
-
-// Ambil data lapangan yang dipilih beserta harganya
-$query_lapangan = "SELECT * FROM lapangan WHERE id_lapangan = $id_lapangan";
-$result_lapangan = mysqli_query($koneksi, $query_lapangan);
-$lapangan = mysqli_fetch_assoc($result_lapangan);
-
-// Jika lapangan tidak ditemukan, tampilkan pesan peringatan alih-alih redirect looping
-if (!$lapangan) {
-    echo "<div style='font-family: Arial; text-align: center; margin-top: 50px;'>";
-    echo "<h2 style='color: #c0392b;'>Error: Lapangan tidak dipilih atau tidak ditemukan!</h2>";
-    echo "<p>Silakan kembali ke halaman utama dan pilih lapangan terlebih dahulu.</p>";
-    echo "<a href='index.php' style='background: #2980b9; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;'>Kembali ke Beranda</a>";
-    echo "</div>";
-    exit();
+// Pastikan user sudah login
+if (!isset($_SESSION['login'])) {
+    header("Location: login.php");
+    exit;
 }
 
-$pesan = "";
+$id_pengguna = $_SESSION['id_pengguna'];
+$nama_lengkap = isset($_SESSION['nama_lengkap']) ? $_SESSION['nama_lengkap'] : 'Penyewa';
 
-// Jika tombol 'pesan_sekarang' ditekan
-if (isset($_POST['pesan_sekarang'])) {
-    $id_pengguna = intval($_POST['id_pengguna']);
+// Ambil ID Lapangan dari URL, default ke 21 (sesuai database)
+$id_lapangan = (isset($_GET['id']) && !empty($_GET['id'])) ? intval($_GET['id']) : 21;
+
+// Ambil data lapangan
+$query_lapangan = mysqli_query($koneksi, "SELECT * FROM lapangan WHERE id_lapangan = '$id_lapangan'");
+$lapangan = mysqli_fetch_assoc($query_lapangan);
+
+if (!$lapangan) {
+    $query_fallback = mysqli_query($koneksi, "SELECT * FROM lapangan ORDER BY id_lapangan ASC LIMIT 1");
+    $lapangan = mysqli_fetch_assoc($query_fallback);
+    $id_lapangan = $lapangan['id_lapangan'];
+}
+
+$error = '';
+
+// Proses Pemesanan (Dua Opsi Tombol)
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $tanggal_reservasi = mysqli_real_escape_string($koneksi, $_POST['tanggal_reservasi']);
     $durasi_jam = intval($_POST['durasi_jam']);
-    $harga_per_jam = $lapangan['harga_per_jam'];
     
-    // Hitung subtotal harga otomatis
-    $subtotal_harga = $durasi_jam * $harga_per_jam;
-    $status = 'Pending';
+    // PERBAIKAN DI SINI: Menghitung total harga dengan benar (durasi dikali harga per jam)
+    $subtotal_harga = $durasi_jam * $lapangan['harga_per_jam'];
 
-    // 1. Simpan data ke tabel induk (reservasi)
-    $query_reservasi = "INSERT INTO reservasi (id_pengguna, id_lapangan, tanggal_reservasi, status) 
-                        VALUES ('$id_pengguna', '$id_lapangan', '$tanggal_reservasi', '$status')";
-    
-    if (mysqli_query($koneksi, $query_reservasi)) {
-        // Ambil ID reservasi yang baru saja digenerate
-        $id_reservasi_baru = mysqli_insert_id($koneksi);
-
-        // 2. Simpan data ke tabel anak (detail_reservasi)
-        $query_detail = "INSERT INTO detail_reservasi (id_reservasi, durasi_jam, subtotal_harga) 
-                         VALUES ('$id_reservasi_baru', '$durasi_jam', '$subtotal_harga')";
-        
-        if (mysqli_query($koneksi, $query_detail)) {
-            $pesan = "<p style='color: green;'>Booking berhasil dilakukan! Data tersimpan di database.</p>";
+    if (!empty($tanggal_reservasi) && $durasi_jam > 0) {
+        // Cek tombol mana yang diklik
+        if (isset($_POST['aksi_bayar'])) {
+            $status = 'Sukses'; // Jika klik Bayar Sekarang, status langsung Sukses
+            $redirect_url = "bayar.php";
         } else {
-            $pesan = "<p style='color: red;'>Gagal menyimpan detail reservasi: " . mysqli_error($koneksi) . "</p>";
+            $status = 'Pending'; // Jika klik Booking Saja, status tetap Pending
+            $redirect_url = "riwayat.php?status=booking_success";
+        }
+
+        // 1. Simpan ke tabel 'reservasi'
+        $q1 = "INSERT INTO reservasi (id_pengguna, id_lapangan, tanggal_reservasi, status) 
+               VALUES ('$id_pengguna', '$id_lapangan', '$tanggal_reservasi', '$status')";
+        
+        if (mysqli_query($koneksi, $q1)) {
+            $id_reservasi_baru = mysqli_insert_id($koneksi);
+
+            // 2. Simpan ke tabel 'detail_reservasi'
+            $q2 = "INSERT INTO detail_reservasi (id_reservasi, durasi_jam, subtotal_harga) 
+                   VALUES ('$id_reservasi_baru', '$durasi_jam', '$subtotal_harga')";
+            
+            if (mysqli_query($koneksi, $q2)) {
+                if (isset($_POST['aksi_bayar'])) {
+                    header("Location: " . $redirect_url . "?id=" . $id_reservasi_baru);
+                } else {
+                    header("Location: " . $redirect_url);
+                }
+                exit;
+            } else {
+                $error = "Gagal menyimpan detail reservasi: " . mysqli_error($koneksi);
+            }
+        } else {
+            $error = "Gagal menyimpan data reservasi: " . mysqli_error($koneksi);
         }
     } else {
-        $pesan = "<p style='color: red;'>Gagal menyimpan reservasi: " . mysqli_error($koneksi) . "</p>";
+        $error = "Silakan isi tanggal reservasi dan durasi jam dengan benar!";
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Form Booking - Kukusan Sport Center</title>
+    <title>Form Booking Lapangan - Kukusan Sport Center</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f4f7f6; color: #333; }
-        .container { max-width: 500px; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin: auto; }
-        h2 { color: #2c3e50; text-align: center; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-        .btn-submit { background-color: #27ae60; color: white; padding: 10px 15px; border: none; width: 100%; border-radius: 4px; font-size: 16px; cursor: pointer; }
-        .btn-submit:hover { background-color: #219653; }
-        .btn-back { display: block; text-align: center; margin-top: 15px; text-decoration: none; color: #2980b9; }
-        .info-box { background: #e8f8f5; padding: 10px; border-left: 4px solid #27ae60; margin-bottom: 15px; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; }
+        body { background: linear-gradient(rgba(30, 8, 64, 0.75), rgba(15, 3, 33, 0.85)), url('https://images.unsplash.com/photo-1518605368461-1ee7e1617511?q=80&w=1920&auto=format&fit=crop') center/cover no-repeat; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .card { background: white; padding: 35px; border-radius: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); width: 100%; max-width: 500px; }
+        h2 { color: #4a148c; text-align: center; margin-bottom: 8px; font-weight: 700; }
+        .subtitle { text-align: center; color: #6b7280; font-size: 13px; margin-bottom: 25px; }
+        .info-box { background: #f3e8ff; padding: 15px; border-left: 4px solid #6a1b9a; border-radius: 8px; margin-bottom: 20px; font-size: 14px; color: #374151; }
+        .info-box p { margin-bottom: 5px; }
+        .info-box p:last-child { margin-bottom: 0; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-weight: 600; margin-bottom: 8px; color: #374151; font-size: 13px; }
+        input { width: 100%; padding: 12px 15px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; background-color: #f9fafb; transition: all 0.3s; }
+        input:focus { border-color: #7c3aed; background-color: #fff; outline: none; box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.1); }
+        .btn-group { display: flex; gap: 12px; margin-top: 25px; }
+        .btn-booking { flex: 1; padding: 14px; background-color: #6a1b9a; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; transition: all 0.3s; }
+        .btn-bayar { flex: 1; padding: 14px; background-color: #059669; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; transition: all 0.3s; }
+        .btn-booking:hover { background-color: #4a148c; transform: translateY(-1px); }
+        .btn-bayar:hover { background-color: #047857; transform: translateY(-1px); }
+        .alert-error { background: #fef2f2; color: #dc2626; padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #fca5a5; font-size: 13px; text-align: center; font-weight: 500; }
+        .nav-links { display: flex; justify-content: space-between; margin-top: 25px; padding-top: 20px; border-top: 1px solid #f3f4f6; }
+        .nav-links a { color: #6a1b9a; text-decoration: none; font-size: 13px; font-weight: 600; }
+        .nav-links a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <h2>Form Booking Lapangan</h2>
-        
-        <div class="info-box">
-            <p><strong>Lapangan:</strong> <?= htmlspecialchars($lapangan['nama_lapangan']); ?></p>
-            <p><strong>Harga:</strong> Rp <?= number_format($lapangan['harga_per_jam'], 0, ',', '.'); ?> / jam</p>
+<div class="card">
+    <h2>Form Reservasi Lapangan</h2>
+    <p class="subtitle">Kukusan Sport Center</p>
+
+    <?php if (!empty($error)): ?>
+        <div class="alert-error"><?= $error; ?></div>
+    <?php endif; ?>
+
+    <div class="info-box">
+        <p><strong>Lapangan:</strong> <?= htmlspecialchars($lapangan['nama_lapangan']); ?></p>
+        <p><strong>Harga:</strong> Rp <?= number_format($lapangan['harga_per_jam'], 0, ',', '.'); ?> / jam</p>
+        <p><strong>Penyewa:</strong> <?= htmlspecialchars($nama_lengkap); ?></p>
+    </div>
+
+    <form action="" method="POST">
+        <div class="form-group">
+            <label for="tanggal_reservasi">Tanggal Sewa</label>
+            <input type="date" name="tanggal_reservasi" id="tanggal_reservasi" required>
         </div>
 
-        <?= $pesan; ?>
+        <div class="form-group">
+            <label for="durasi_jam">Durasi (Jam)</label>
+            <input type="number" name="durasi_jam" id="durasi_jam" value="1" min="1" required>
+        </div>
 
-        <form action="" method="POST">
-            <div class="form-group">
-                <label for="id_pengguna">ID Pengguna (Penyewa):</label>
-                <input type="number" name="id_pengguna" id="id_pengguna" placeholder="Masukkan ID Pengguna (1-10)" required min="1" max="10">
-                <small style="color: #666;">Masukkan angka antara 1 sampai 10 sesuai data pengguna.</small>
-            </div>
+        <div class="btn-group">
+            <button type="submit" name="aksi_booking" class="btn-booking">
+                📌 Booking Saja
+            </button>
+            <button type="submit" name="aksi_bayar" class="btn-bayar">
+                💳 Bayar Sekarang
+            </button>
+        </div>
+    </form>
 
-            <div class="form-group">
-                <label for="tanggal_reservasi">Tanggal Sewa:</label>
-                <input type="date" name="tanggal_reservasi" id="tanggal_reservasi" required>
-            </div>
-
-            <div class="form-group">
-                <label for="durasi_jam">Durasi (Jam):</label>
-                <input type="number" name="durasi_jam" id="durasi_jam" value="1" min="1" max="12" required>
-            </div>
-
-            <button type="submit" name="pesan_sekarang" class="btn-submit">Konfirmasi Booking</button>
-        </form>
-
-        <a href="index.php" class="btn-back">&larr; Kembali ke Daftar Lapangan</a>
+    <div class="nav-links">
+        <a href="index.php">← Kembali ke Katalog</a>
+        <a href="riwayat.php">Lihat Riwayat 📂</a>
     </div>
+</div>
 
 </body>
 </html>

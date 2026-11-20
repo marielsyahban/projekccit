@@ -1,9 +1,7 @@
 <?php
-// 1. CEK SESSION LOGIN (Bagian Penting #1)
-// Memulai sesi PHP untuk mengecek apakah pengguna sudah melakukan login
+// 1. Inisialisasi Sesi & Cek Login
 session_start();
 
-// Jika belum ada session 'login', paksa arahkan kembali ke halaman login.php
 if (!isset($_SESSION['login'])) {
     header("Location: login.php");
     exit;
@@ -12,7 +10,7 @@ if (!isset($_SESSION['login'])) {
 // Panggil file koneksi database
 include 'koneksi.php';
 
-// Ambil data dari tabel lapangan
+// Ambil seluruh data lapangan dari database
 $query = "SELECT * FROM lapangan";
 $result = mysqli_query($koneksi, $query);
 
@@ -49,20 +47,20 @@ function getFotoLapangan($nama) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>App Sewa Lapangan - Kukusan Sport Center</title>
+    <title>Katalog Lapangan - Kukusan Sport Center</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: Arial, sans-serif; background-color: #ffffff; color: #333333; }
+        body { font-family: Arial, sans-serif; background-color: #f9f5fc; color: #333333; }
         
-        /* Navbar Atas - Ungu Utama & Latar Putih */
+        /* Navbar Atas & Menu */
         .navbar-top { background-color: #6a1b9a; color: #ffffff; padding: 15px 25px; font-size: 16px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-        .navbar-menu { background-color: #ffffff; padding: 12px 25px; border-bottom: 2px solid #f3e5f5; display: flex; justify-content: space-between; align-items: center; }
+        .navbar-menu { background-color: #ffffff; padding: 12px 25px; border-bottom: 2px solid #f3e5f5; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
         .nav-links { display: flex; gap: 20px; align-items: center; }
         .nav-links a { text-decoration: none; color: #6a1b9a; font-size: 14px; font-weight: bold; display: flex; align-items: center; gap: 5px; }
         .nav-links a:hover { color: #4a148c; }
 
-        /* Style Sambutan Nama User & Tombol Logout (Bagian Penting #2) */
-        .user-info { font-size: 13px; color: #4a148c; font-weight: bold; }
+        /* Sapaan User & Tombol Logout */
+        .user-info { font-size: 13px; color: #f3e5f5; font-weight: bold; }
         .btn-logout { background-color: #c62828; color: white !important; padding: 6px 12px; border-radius: 4px; text-decoration: none; font-size: 12px; }
         .btn-logout:hover { background-color: #b71c1c !important; }
 
@@ -71,18 +69,20 @@ function getFotoLapangan($nama) {
         .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px; }
 
         /* Card Lapangan Ungu & Putih */
-        .card { background: #ffffff; border: 1px solid #e1bee7; border-top: 4px solid #6a1b9a; border-radius: 6px; box-shadow: 0 4px 12px rgba(106, 27, 154, 0.06); overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; }
+        .card { background: #ffffff; border: 1px solid #e1bee7; border-top: 4px solid #6a1b9a; border-radius: 8px; box-shadow: 0 4px 12px rgba(106, 27, 154, 0.06); overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(106, 27, 154, 0.12); }
+        
         .card-header { padding: 15px 20px 10px 20px; }
         .card-header h3 { font-size: 15px; color: #6a1b9a; text-transform: uppercase; margin-bottom: 5px; font-weight: bold; }
-        .card-header .harga { font-size: 14px; font-weight: bold; color: #4a148c; }
+        .card-header .harga { font-size: 14px; font-weight: bold; color: #6a1b9a; }
 
         /* Gambar Card */
-        .card-img-container { width: 100%; height: 200px; overflow: hidden; background: #f3e5f5; }
+        .card-img-container { width: 100%; height: 200px; overflow: hidden; background: #f3e5f5; border-top: 1px solid #f3e5f5; border-bottom: 1px solid #f3e5f5; }
         .card-img-container img { width: 100%; height: 100%; object-fit: cover; }
 
         /* Tombol Aksi Khas Ungu & Putih */
         .card-actions { padding: 15px 20px; background: #ffffff; display: flex; gap: 10px; }
-        .btn { padding: 9px 16px; border-radius: 4px; text-decoration: none; font-size: 13px; font-weight: bold; text-align: center; cursor: pointer; transition: 0.2s; }
+        .btn { padding: 10px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: bold; text-align: center; cursor: pointer; transition: 0.2s; }
         
         .btn-detail { background-color: #f3e5f5; color: #6a1b9a; border: 1px solid #e1bee7; flex: 1; }
         .btn-detail:hover { background-color: #e1bee7; }
@@ -93,9 +93,9 @@ function getFotoLapangan($nama) {
 </head>
 <body>
 
-    <!-- Header / Navbar Atas (Menampilkan Sapaan Nama User) -->
+    <!-- Header / Navbar Atas -->
     <div class="navbar-top">
-        <span>📍 App Sewa Lapangan - Kukusan Sport Center</span>
+        <span>📍 Kukusan Sport Center</span>
         <span class="user-info">Halo, <?= htmlspecialchars($_SESSION['nama_lengkap']); ?> 👋</span>
     </div>
     
@@ -105,12 +105,11 @@ function getFotoLapangan($nama) {
             <a href="riwayat.php">📂 Riwayat Pemesanan</a>
         </div>
         <div class="nav-links">
-            <!-- Tombol Keluar / Logout (Bagian Penting #3) -->
             <a href="logout.php" class="btn-logout">Logout 🚪</a>
         </div>
     </div>
 
-    <!-- Konten Daftar Lapangan (Card Grid Ungu-Putih) -->
+    <!-- Konten Daftar Lapangan -->
     <div class="container">
         <div class="card-grid">
             <?php 
@@ -129,14 +128,16 @@ function getFotoLapangan($nama) {
                         </div>
                     </div>
                     <div class="card-actions">
-                        <a href="#" class="btn btn-detail">Lihat detail</a>
+                        <!-- Tombol Lihat Detail mengarah ke detail.php membawa id_lapangan -->
+                        <a href="detail.php?id=<?= $row['id_lapangan']; ?>" class="btn btn-detail">Lihat detail</a>
+                        <!-- Tombol Sewa mengarah ke booking.php membawa id_lapangan -->
                         <a href="booking.php?id_lapangan=<?= $row['id_lapangan']; ?>" class="btn btn-sewa">Sewa</a>
                     </div>
                 </div>
             <?php 
                 }
             } else {
-                echo "<p style='text-align: center; grid-column: 1 / -1;'>Belum ada data lapangan yang tersedia.</p>";
+                echo "<p style='text-align: center; grid-column: 1 / -1; color: #666;'>Belum ada data lapangan yang tersedia.</p>";
             }
             ?>
         </div>
